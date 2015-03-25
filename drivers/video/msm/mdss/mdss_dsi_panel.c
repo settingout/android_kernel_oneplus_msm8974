@@ -74,9 +74,13 @@ static int mdss_dsi_update_cabc_level(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
     if (!pinfo->cabc_available)
         goto done;
 
-	pr_info("%s: update cabc level=%d (%d) sre=%d (%d)", __func__,
-			pinfo->cabc_mode, pinfo->cabc_active,
-			pinfo->sre_enabled, pinfo->sre_active);
+	pr_info("%s: update cabc level=%d  sre=%d", __func__,
+			pinfo->cabc_mode, pinfo->sre_enabled);
+
+	if (pinfo->sre_available && pinfo->sre_enabled) {
+		mdss_dsi_panel_cmds_send(ctrl_pdata, &cabc_sre_sequence);
+		goto done;
+	}
 
 	switch (pinfo->cabc_mode)
 	{
@@ -84,12 +88,7 @@ static int mdss_dsi_update_cabc_level(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 			mdss_dsi_panel_cmds_send(ctrl_pdata, &cabc_off_sequence);
 			break;
 		case 1:
-			if (pinfo->sre_available && pinfo->sre_active)
-				mdss_dsi_panel_cmds_send(ctrl_pdata, &cabc_sre_sequence);
-			else if (pinfo->cabc_bl_max > 0 && !pinfo->cabc_active)
-				mdss_dsi_panel_cmds_send(ctrl_pdata, &cabc_off_sequence);
-			else
-				mdss_dsi_panel_cmds_send(ctrl_pdata, &cabc_user_interface_image_sequence);
+			mdss_dsi_panel_cmds_send(ctrl_pdata, &cabc_user_interface_image_sequence);
 			break;
 		case 2:
 			mdss_dsi_panel_cmds_send(ctrl_pdata, &cabc_still_image_sequence);
@@ -147,43 +146,8 @@ out:
 
 }
 
-int mdss_dsi_panel_update_sre(struct mdss_panel_data *pdata, u32 bl_level)
-{
-	int ret = 0;
-	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
-	struct mdss_panel_info *pinfo = NULL;
-
-	int sre = 0;
-	int cabc = 0;
-
-	if (pdata == NULL)
-		return -EINVAL;
-
-	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata, panel_data);
-	pinfo = &(ctrl_pdata->panel_data.panel_info);
-
-	if (!pinfo->cabc_mode)
-		return 0;
-
-	// disable CABC above some backlight value since it's not effective at high
-	// brightness. optionally enable SRE when it's even higher to melt faces off.
-	cabc = pinfo->cabc_mode &&
-			(pinfo->cabc_bl_max <= 0 || bl_level <= pinfo->cabc_bl_max);
-	sre = pinfo->sre_enabled &&
-			(pinfo->sre_bl_threshold <= 0 || bl_level > pinfo->sre_bl_threshold);
-
-	if (cabc != pinfo->cabc_active || sre != pinfo->sre_active) {
-		pinfo->cabc_active = cabc;
-		pinfo->sre_active = sre;
-		ret = mdss_dsi_update_cabc_level(ctrl_pdata);
-	}
-
-	return ret;
-}
-
 int mdss_dsi_panel_set_sre(struct mdss_panel_data *pdata, bool enable)
 {
-	int ret = 0;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	struct mdss_panel_info *pinfo = NULL;
 
@@ -201,10 +165,9 @@ int mdss_dsi_panel_set_sre(struct mdss_panel_data *pdata, bool enable)
 
 	mutex_lock(&config_mutex);
 	pinfo->sre_enabled = enable;
-	pinfo->sre_active = false;
 	mutex_unlock(&config_mutex);
 
-	return ret;
+	return mdss_dsi_update_cabc_level(ctrl_pdata);
 }
 
 static int mdss_dsi_update_color_enhance(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
@@ -1925,10 +1888,6 @@ static int mdss_panel_parse_dt(struct device_node *np,
 		"qcom,mdss-dsi-sre-ui-command", "qcom,mdss-dsi-off-command-state");
 
 	pinfo->sre_available = rc == 0 ? 1 : 0;
-
-	of_property_read_u32(np, "qcom,mdss-dsi-bl-sre-level", &pinfo->sre_bl_threshold);
-
-	of_property_read_u32(np, "qcom,mdss-dsi-bl-cabc-max-level", &pinfo->cabc_bl_max);
 
 	rc = mdss_dsi_parse_dcs_cmds(np, &color_enhance_on_sequence,
 		"qcom,mdss-dsi-color-enhance-on-command", "qcom,mdss-dsi-off-command-state");
