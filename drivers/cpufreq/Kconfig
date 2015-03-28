@@ -120,6 +120,16 @@ config CPU_FREQ_GOV_SMARTMAX
         help
           'smartmax' combined ondemand and smartass2
 
+config CPU_FREQ_GOV_INTERACTIVE_FRANCO
+	bool "interactive_franco"
+	select CPU_FREQ_GOV_INTERACTIVE_FRANCO
+	help
+	  Use the CPUFreq governor 'interactive' as default. This allows
+	  you to get a full dynamic cpu frequency capable system by simply
+	  loading your cpufreq low-level hardware driver, using the
+	  'interactive' governor for latency-sensitive workloads.
+
+
 config CPU_FREQ_DEFAULT_GOV_CONSERVATIVE
 	bool "conservative"
 	select CPU_FREQ_GOV_CONSERVATIVE
